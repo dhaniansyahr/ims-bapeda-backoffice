@@ -7,8 +7,8 @@ import {
     SelectTrigger,
     SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
 import { TOption } from "@/types/common";
+import { cn } from "@/utils/classname";
 
 interface SingleSelectProps {
     options: TOption[];

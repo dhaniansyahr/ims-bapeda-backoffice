@@ -3,7 +3,6 @@
 
 import * as React from "react";
 import { CheckIcon, ChevronDownIcon, XIcon } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { TOption } from "@/types/common";
 import {
     Popover,
@@ -19,7 +18,8 @@ import {
     CommandList,
     CommandSeparator,
 } from "@/components/ui/command";
-import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/utils/classname";
+import { Checkbox } from "./ui/checkbox";
 
 interface MultiSelectFieldProps {
     options: TOption[];
