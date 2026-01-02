@@ -11,13 +11,13 @@ import {
     useReactTable,
     type ColumnDef,
     type ColumnFiltersState,
+    type HeaderGroup,
+    type Header,
     type Row,
     type SortingState,
     type VisibilityState,
-    type HeaderGroup,
-    type Header,
-    type Cell,
 } from "@tanstack/react-table";
+import { ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -36,16 +36,7 @@ import {
     TableHeader,
     TableRow,
 } from "@/components/ui/table";
-import {
-    Pagination,
-    PaginationContent,
-    PaginationItem,
-    PaginationLink,
-    PaginationNext,
-    PaginationPrevious,
-    PaginationEllipsis,
-} from "@/components/ui/pagination";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 
 interface DataTableProps<TData> {
     data: TData[];
@@ -61,6 +52,56 @@ interface DataTableProps<TData> {
     rowsPerPageOptions?: number[];
     loading?: boolean;
     totalData?: number;
+    onClickRow?: (row: TData) => void;
+}
+
+function DraggableRow<TData>({
+    row,
+    onClickRow,
+}: {
+    row: Row<TData>;
+    onClickRow?: (row: TData) => void;
+}) {
+    const handleRowClick = (e: React.MouseEvent<HTMLTableRowElement>) => {
+        // Don't trigger row click if clicking on interactive elements
+        const target = e.target as HTMLElement;
+        if (
+            target.closest("button") ||
+            target.closest("a") ||
+            target.closest("[role='button']")
+        ) {
+            return;
+        }
+
+        if (onClickRow) {
+            onClickRow(row.original);
+        }
+    };
+
+    return (
+        <TableRow
+            data-state={row.getIsSelected() && "selected"}
+            className={`relative z-0 data-[dragging=true]:z-10 data-[dragging=true]:opacity-80 ${
+                onClickRow ? "cursor-pointer hover:bg-accent/50" : ""
+            }`}
+            onClick={handleRowClick}
+        >
+            {row
+                .getVisibleCells()
+                .map(
+                    (
+                        cell: ReturnType<Row<TData>["getVisibleCells"]>[number]
+                    ) => (
+                        <TableCell key={cell.id} className="h-16 px-4">
+                            {flexRender(
+                                cell.column.columnDef.cell,
+                                cell.getContext()
+                            )}
+                        </TableCell>
+                    )
+                )}
+        </TableRow>
+    );
 }
 
 export function DataTable<TData>({
@@ -72,6 +113,7 @@ export function DataTable<TData>({
     rowsPerPageOptions = [10, 20, 30, 40, 50],
     loading = false,
     totalData,
+    onClickRow,
 }: DataTableProps<TData>) {
     const [data, setData] = useState(() => initialData);
     const [rowSelection, setRowSelection] = useState({});
@@ -141,43 +183,42 @@ export function DataTable<TData>({
         ? pagination.totalPages
         : table.getPageCount();
 
-    // Calculate start and end data range
-    const startData = (currentPage - 1) * rowsPerPage + 1;
-    const endData = Math.min(
-        currentPage * rowsPerPage,
-        totalData || data.length
-    );
     const totalDataCount = totalData || data.length;
 
-    // Generate page numbers for pagination
+    // Generate page numbers with ellipsis
     const getPageNumbers = () => {
-        const pages: (number | "ellipsis")[] = [];
-        const maxVisible = 5;
+        const pages: (number | string)[] = [];
+        const showEllipsisThreshold = 7;
 
-        if (totalPages <= maxVisible) {
+        if (totalPages <= showEllipsisThreshold) {
+            // Show all pages if total pages is small
             for (let i = 1; i <= totalPages; i++) {
                 pages.push(i);
             }
         } else {
-            if (currentPage <= 3) {
-                for (let i = 1; i <= 4; i++) {
+            // Always show first page
+            pages.push(1);
+
+            if (currentPage > 3) {
+                pages.push("...");
+            }
+
+            // Show pages around current page
+            const start = Math.max(2, currentPage - 1);
+            const end = Math.min(totalPages - 1, currentPage + 1);
+
+            for (let i = start; i <= end; i++) {
+                if (!pages.includes(i)) {
                     pages.push(i);
                 }
-                pages.push("ellipsis");
-                pages.push(totalPages);
-            } else if (currentPage >= totalPages - 2) {
-                pages.push(1);
-                pages.push("ellipsis");
-                for (let i = totalPages - 3; i <= totalPages; i++) {
-                    pages.push(i);
-                }
-            } else {
-                pages.push(1);
-                pages.push("ellipsis");
-                for (let i = currentPage - 1; i <= currentPage + 1; i++) {
-                    pages.push(i);
-                }
-                pages.push("ellipsis");
+            }
+
+            if (currentPage < totalPages - 2) {
+                pages.push("...");
+            }
+
+            // Always show last page
+            if (!pages.includes(totalPages)) {
                 pages.push(totalPages);
             }
         }
@@ -185,200 +226,170 @@ export function DataTable<TData>({
         return pages;
     };
 
+    const pageNumbers = getPageNumbers();
+
     return (
-        <div className="flex w-full flex-col gap-6">
-            <div className="w-full min-w-0 overflow-x-auto overflow-y-hidden rounded-lg border">
-                <div className="min-w-fit">
-                    <Table>
-                        <TableHeader className="bg-muted sticky top-0 z-10">
-                            {table
-                                .getHeaderGroups()
-                                .map((headerGroup: HeaderGroup<TData>) => (
-                                    <TableRow key={headerGroup.id}>
-                                        {headerGroup.headers.map(
-                                            (
-                                                header: Header<TData, unknown>
-                                            ) => {
-                                                return (
-                                                    <TableHead
-                                                        key={header.id}
-                                                        colSpan={header.colSpan}
-                                                        className="h-12 px-4 text-left"
-                                                    >
-                                                        {header.isPlaceholder
-                                                            ? null
-                                                            : flexRender(
-                                                                  header.column
-                                                                      .columnDef
-                                                                      .header,
-                                                                  header.getContext()
-                                                              )}
-                                                    </TableHead>
-                                                );
-                                            }
-                                        )}
-                                    </TableRow>
-                                ))}
-                        </TableHeader>
-                        <TableBody className="**:data-[slot=table-cell]:first:w-8">
-                            {loading ? (
-                                <TableRow>
-                                    <TableCell
-                                        colSpan={columns.length}
-                                        className="h-24 text-center"
-                                    >
-                                        Loading...
-                                    </TableCell>
-                                </TableRow>
-                            ) : table.getRowModel().rows?.length ? (
-                                table
-                                    .getRowModel()
-                                    .rows.map((row: Row<TData>) => (
+        <div className="flex w-full flex-col justify-start gap-6">
+            <div className="relative flex max-w-full min-w-0 flex-col gap-4">
+                <div className="w-full min-w-0 overflow-x-auto overflow-y-hidden">
+                    <div className="min-w-fit">
+                        <Table>
+                            <TableHeader className="bg-accent sticky top-0 z-10">
+                                {table
+                                    .getHeaderGroups()
+                                    .map((headerGroup: HeaderGroup<TData>) => (
                                         <TableRow
-                                            key={row.id}
-                                            data-state={
-                                                row.getIsSelected() &&
-                                                "selected"
-                                            }
+                                            key={headerGroup.id}
+                                            className="border-b-0"
                                         >
-                                            {row
-                                                .getVisibleCells()
-                                                .map(
-                                                    (
-                                                        cell: Cell<
-                                                            TData,
-                                                            unknown
+                                            {headerGroup.headers.map(
+                                                (
+                                                    header: Header<
+                                                        TData,
+                                                        unknown
+                                                    >
+                                                ) => {
+                                                    return (
+                                                        <TableHead
+                                                            key={header.id}
+                                                            colSpan={
+                                                                header.colSpan
+                                                            }
+                                                            className="h-12 px-4 text-left"
                                                         >
-                                                    ) => (
-                                                        <TableCell
-                                                            key={cell.id}
-                                                            className="h-16 px-4"
-                                                        >
-                                                            {flexRender(
-                                                                cell.column
-                                                                    .columnDef
-                                                                    .cell,
-                                                                cell.getContext()
-                                                            )}
-                                                        </TableCell>
-                                                    )
-                                                )}
+                                                            {header.isPlaceholder
+                                                                ? null
+                                                                : flexRender(
+                                                                      header
+                                                                          .column
+                                                                          .columnDef
+                                                                          .header,
+                                                                      header.getContext()
+                                                                  )}
+                                                        </TableHead>
+                                                    );
+                                                }
+                                            )}
                                         </TableRow>
-                                    ))
-                            ) : (
-                                <TableRow>
-                                    <TableCell
-                                        colSpan={columns.length}
-                                        className="h-24 text-center"
-                                    >
-                                        No results.
-                                    </TableCell>
-                                </TableRow>
-                            )}
-                        </TableBody>
-                    </Table>
-                </div>
-            </div>
-
-            <div className="flex items-center justify-between px-4">
-                <div className="hidden items-center gap-2 lg:flex">
-                    <Label
-                        htmlFor="rows-per-page"
-                        className="text-sm font-medium"
-                    >
-                        Rows per page
-                    </Label>
-                    <Select
-                        value={`${rowsPerPage}`}
-                        onValueChange={handlePageSizeChange}
-                    >
-                        <SelectTrigger className="w-20" id="rows-per-page">
-                            <SelectValue placeholder={rowsPerPage} />
-                        </SelectTrigger>
-                        <SelectContent side="top">
-                            {rowsPerPageOptions.map((pageSize) => (
-                                <SelectItem
-                                    key={pageSize}
-                                    value={`${pageSize}`}
-                                >
-                                    {pageSize}
-                                </SelectItem>
-                            ))}
-                        </SelectContent>
-                    </Select>
-                </div>
-
-                <div className="flex w-fit items-center justify-center text-sm font-medium">
-                    {startData}-{endData} of {totalDataCount}
-                </div>
-
-                <Pagination>
-                    <PaginationContent>
-                        <PaginationItem>
-                            <PaginationPrevious
-                                onClick={(e) => {
-                                    e.preventDefault();
-                                    if (
-                                        currentPage > 1 &&
-                                        !pagination?.isFetching
-                                    ) {
-                                        handlePageChange(currentPage - 1);
-                                    }
-                                }}
-                                className={
-                                    currentPage === 1 || pagination?.isFetching
-                                        ? "pointer-events-none opacity-50"
-                                        : "cursor-pointer"
-                                }
-                            />
-                        </PaginationItem>
-
-                        {getPageNumbers().map((page, index) => (
-                            <PaginationItem key={index}>
-                                {page === "ellipsis" ? (
-                                    <PaginationEllipsis />
+                                    ))}
+                            </TableHeader>
+                            <TableBody className="**:data-[slot=table-cell]:first:w-8">
+                                {loading ? (
+                                    <TableRow>
+                                        <TableCell
+                                            colSpan={columns.length}
+                                            className="h-24 text-center"
+                                        >
+                                            Loading...
+                                        </TableCell>
+                                    </TableRow>
+                                ) : table.getRowModel().rows?.length ? (
+                                    table
+                                        .getRowModel()
+                                        .rows.map((row: Row<TData>) => (
+                                            <DraggableRow
+                                                key={row.id}
+                                                row={row}
+                                                onClickRow={onClickRow}
+                                            />
+                                        ))
                                 ) : (
-                                    <PaginationLink
-                                        onClick={(e) => {
-                                            e.preventDefault();
-                                            if (!pagination?.isFetching) {
-                                                handlePageChange(page);
-                                            }
-                                        }}
-                                        isActive={currentPage === page}
-                                        className={
-                                            pagination?.isFetching
-                                                ? "pointer-events-none opacity-50"
-                                                : "cursor-pointer"
-                                        }
-                                    >
-                                        {page}
-                                    </PaginationLink>
+                                    <TableRow>
+                                        <TableCell
+                                            colSpan={columns.length}
+                                            className="h-24 text-center"
+                                        >
+                                            No results.
+                                        </TableCell>
+                                    </TableRow>
                                 )}
-                            </PaginationItem>
-                        ))}
+                            </TableBody>
+                        </Table>
+                    </div>
+                </div>
+                <div className="flex items-center justify-between py-2.5 gap-2.5 border-t">
+                    <p className="text-xs font-normal text-muted-foreground">
+                        Total Data: {totalDataCount}
+                    </p>
+                    <div className="flex items-center gap-1 bg-accent p-1 rounded-lg">
+                        <Button
+                            className="text-xs font-normal bg-white text-foreground hover:bg-accent"
+                            size="sm"
+                            onClick={() => handlePageChange(currentPage - 1)}
+                            disabled={
+                                currentPage === 1 || pagination?.isFetching
+                            }
+                        >
+                            <ChevronLeftIcon className="h-4 w-4" />
+                        </Button>
 
-                        <PaginationItem>
-                            <PaginationNext
-                                onClick={(e) => {
-                                    e.preventDefault();
-                                    if (
-                                        currentPage < totalPages &&
-                                        !pagination?.isFetching
-                                    ) {
-                                        handlePageChange(currentPage + 1);
+                        {pageNumbers.map((page, index) =>
+                            page === "..." ? (
+                                <span
+                                    key={`ellipsis-${index}`}
+                                    className="px-2 text-xs text-muted-foreground"
+                                >
+                                    •••
+                                </span>
+                            ) : (
+                                <Button
+                                    key={page}
+                                    size="sm"
+                                    className={`h-8 w-8 p-0 text-xs font-normal ${
+                                        currentPage === page
+                                            ? "bg-primary text-white hover:bg-primary/90"
+                                            : "bg-white text-foreground hover:bg-accent"
+                                    }`}
+                                    onClick={() =>
+                                        handlePageChange(page as number)
                                     }
-                                }}
-                                className={
-                                    currentPage === totalPages ||
-                                    pagination?.isFetching
-                                        ? "pointer-events-none opacity-50"
-                                        : "cursor-pointer"
-                                }
-                            />
-                        </PaginationItem>
-                    </PaginationContent>
-                </Pagination>
+                                    disabled={pagination?.isFetching}
+                                >
+                                    {page}
+                                </Button>
+                            )
+                        )}
+
+                        <Button
+                            className="text-xs font-normal bg-white text-foreground hover:bg-accent"
+                            size="sm"
+                            onClick={() => handlePageChange(currentPage + 1)}
+                            disabled={
+                                currentPage === totalPages ||
+                                pagination?.isFetching
+                            }
+                        >
+                            <ChevronRightIcon className="h-4 w-4" />
+                        </Button>
+                    </div>
+
+                    <div className="hidden items-center gap-2 lg:flex">
+                        <Label
+                            htmlFor="rows-per-page"
+                            className="text-xs font-normal text-muted-foreground"
+                        >
+                            Tampilan per halaman
+                        </Label>
+                        <Select
+                            value={`${rowsPerPage}`}
+                            onValueChange={handlePageSizeChange}
+                        >
+                            <SelectTrigger className="w-20" id="rows-per-page">
+                                <SelectValue placeholder={rowsPerPage} />
+                            </SelectTrigger>
+                            <SelectContent>
+                                {rowsPerPageOptions.map((pageSize) => (
+                                    <SelectItem
+                                        key={pageSize}
+                                        value={`${pageSize}`}
+                                    >
+                                        {pageSize}
+                                    </SelectItem>
+                                ))}
+                            </SelectContent>
+                        </Select>
+                    </div>
+                </div>
             </div>
         </div>
     );
